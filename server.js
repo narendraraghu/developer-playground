@@ -323,7 +323,7 @@ app.post('/api/visa/transaction', async (req, res) => {
     if (method === 'POST') {
       console.log('\nEncrypting payload...');
       const encryptedPayload = await encryptPayload(payload, settings.mleServerKey, settings.keyId);
-      console.log('\nEncrypted Payload:');
+      console.log('\nEncrypted Payload :', encryptedPayload);
       console.log(JSON.stringify(encryptedPayload, null, 2));
       requestData = encryptedPayload;
     }

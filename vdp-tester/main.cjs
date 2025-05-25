@@ -14,14 +14,14 @@ function createWindow() {
     },
   });
   win.webContents.openDevTools();
-  win.loadURL('http://localhost:5173');
+    win.loadURL('http://localhost:5173');
 }
 
 app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
-});
+}); 
 
 // IPC handler for Visa Hello World API
 ipcMain.handle('visa-hello', async (event, { userId, password, cert, key }) => {

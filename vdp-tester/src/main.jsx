@@ -7,7 +7,7 @@ import { CredentialProvider } from './context/CredentialContext'
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <CredentialProvider>
-      <App />
+    <App />
     </CredentialProvider>
   </StrictMode>,
 )
