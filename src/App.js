@@ -30,6 +30,58 @@ function App() {
   const [mleClientKeyFile, setMleClientKeyFile] = useState('');
   const [sslServerCertFile, setSslServerCertFile] = useState('');
   const [sslClientKeyFile, setSslClientKeyFile] = useState('');
+  const [defaultPayload] = useState({
+    "amount": 124.05,
+    "senderAddress": "901 Metro Center Blvd",
+    "localTransactionDateTime": "2023-05-05T12:00:00",
+    "pointOfServiceData": {
+      "panEntryMode": 90,
+      "posConditionCode": "00",
+      "motoECIIndicator": 0
+    },
+    "recipientPrimaryAccountNumber": "4060320000000127",
+    "colombiaNationalServiceData": {
+      "addValueTaxReturn": 10,
+      "taxAmountConsumption": 10,
+      "nationalNetReimbursementFeeBaseAmount": 20,
+      "addValueTaxAmount": 10,
+      "nationalNetMiscAmount": 10,
+      "countryCodeNationalService": 170,
+      "nationalChargebackReason": 11,
+      "emvTransactionIndicator": "1",
+      "nationalNetMiscAmountType": "A",
+      "costTransactionIndicator": "0",
+      "nationalReimbursementFee": 20
+    },
+    "cardAcceptor": {
+      "address": {
+        "country": "USA",
+        "zipCode": "94404",
+        "county": "San Mateo",
+        "state": "CA"
+      },
+      "idCode": "CA-IDCode-77765",
+      "name": "Visa Inc. USA-Foster City",
+      "terminalId": "TID-9999"
+    },
+    "senderReference": "",
+    "transactionIdentifier": 883916196354773,
+    "acquirerCountryCode": 840,
+    "acquiringBin": 408999,
+    "retrievalReferenceNumber": "412770452025",
+    "senderCity": "Foster City",
+    "senderStateCode": "CA",
+    "systemsTraceAuditNumber": 451018,
+    "senderName": "Mohammed Qasim",
+    "businessApplicationId": "AA",
+    "settlementServiceIndicator": 9,
+    "merchantCategoryCode": 6012,
+    "transactionCurrencyCode": "USD",
+    "recipientName": "rohan",
+    "senderCountryCode": "124",
+    "sourceOfFundsCode": "05",
+    "senderAccountNumber": "4060320000000126"
+  });
 
   // Load saved settings on component mount
   useEffect(() => {
@@ -141,6 +193,17 @@ function App() {
       setError(error.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleMethodChange = (newMethod) => {
+    setMethod(newMethod);
+    if (newMethod === 'POST') {
+      setApiUrl('https://sandbox.api.visa.com/visadirect/fundstransfer/v1/pushfundstransactions');
+      setPayload(JSON.stringify(defaultPayload, null, 2));
+    } else {
+      setApiUrl('https://sandbox.api.visa.com/vdp/helloworld');
+      setPayload('');
     }
   };
 
@@ -331,7 +394,7 @@ function App() {
             <div className="method-url-group">
               <select 
                 value={method} 
-                onChange={(e) => setMethod(e.target.value)}
+                onChange={(e) => handleMethodChange(e.target.value)}
                 className={`method-select is-${method.toLowerCase()}`}
               >
                 <option value="GET">GET</option>

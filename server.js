@@ -60,8 +60,8 @@ function validateKeyFormat(key, type) {
       validEnd = ['-----END PRIVATE KEY-----', '-----END RSA PRIVATE KEY-----', '-----END EC PRIVATE KEY-----'];
       break;
     case 'mleServerKey':
-      validStart = ['-----BEGIN PUBLIC KEY-----', '-----BEGIN RSA PUBLIC KEY-----'];
-      validEnd = ['-----END PUBLIC KEY-----', '-----END RSA PUBLIC KEY-----'];
+      validStart = ['-----BEGIN PUBLIC KEY-----', '-----BEGIN RSA PUBLIC KEY-----', '-----BEGIN CERTIFICATE-----'];
+      validEnd = ['-----END PUBLIC KEY-----', '-----END RSA PUBLIC KEY-----', '-----END CERTIFICATE-----'];
       break;
     case 'mleClientKey':
       validStart = ['-----BEGIN PRIVATE KEY-----', '-----BEGIN RSA PRIVATE KEY-----', '-----BEGIN EC PRIVATE KEY-----'];
@@ -156,75 +156,56 @@ async function encryptPayload(payload, mleServerKey, keyId) {
   console.log('\n=== Encryption Process Start ===');
   console.log('Input Payload:', payload);
   console.log('Input Payload Type:', typeof payload);
-  console.log('Input Payload Length:', JSON.stringify(payload).length);
   console.log('Using Key ID:', keyId);
-  console.log('MLE Server Key length:', mleServerKey.length);
   
   try {
-    const publicKey = createPublicKey({
-      key: mleServerKey,
-      format: 'pem'
-    });
+    // Handle certificate format
+    let publicKey;
+    if (mleServerKey.includes('-----BEGIN CERTIFICATE-----')) {
+      console.log('Converting certificate to public key...');
+      const cert = createPublicKey({
+        key: mleServerKey,
+        format: 'pem'
+      });
+      publicKey = cert;
+    } else {
+      publicKey = createPublicKey({
+        key: mleServerKey,
+        format: 'pem'
+      });
+    }
 
     console.log('\nPublic key created successfully');
     
-    // Ensure payload is a string if it's an object
+    // Ensure payload is a string
     const payloadToEncrypt = typeof payload === 'object' ? JSON.stringify(payload) : payload;
     console.log('\nPayload after stringification:');
     console.log('Type:', typeof payloadToEncrypt);
     console.log('Content:', payloadToEncrypt);
-    console.log('Length:', payloadToEncrypt.length);
     
     // Create JWE with explicit kid matching keyId and iat timestamp
     console.log('\nCreating JWE token...');
-    const jwe = await new jose.EncryptJWT(payloadToEncrypt)
+    const jwe = await new jose.CompactEncrypt(
+      new TextEncoder().encode(payloadToEncrypt)
+    )
       .setProtectedHeader({ 
         alg: 'RSA-OAEP-256',  // Key encryption algorithm
-        enc: 'A256GCM',       // Content encryption algorithm
+        enc: 'A128GCM',       // Content encryption algorithm (changed to match Java)
         kid: keyId,           // Key ID
-        iat: Math.floor(Date.now() / 1000)  // Issued at timestamp
+        iat: Date.now()       // Issued at timestamp in milliseconds
       })
       .encrypt(publicKey);
 
-    // Verify the JWE header
-    const [headerB64] = jwe.split('.');
-    const header = JSON.parse(Buffer.from(headerB64, 'base64').toString());
-    console.log('\nJWE Header:', header);
-    console.log('JWE Token:', jwe);
-    
-    // Verify required header fields
-    const requiredFields = {
-      alg: 'RSA-OAEP-256',
-      enc: 'A256GCM',
-      kid: keyId
-    };
-
-    for (const [field, value] of Object.entries(requiredFields)) {
-      if (header[field] !== value) {
-        throw new Error(`Invalid JWE header: ${field} should be ${value} but got ${header[field]}`);
-      }
-    }
-
-    if (!header.iat) {
-      throw new Error('Missing iat (issued at) timestamp in JWE header');
-    }
-
-    // Verify iat is not too old (2 minutes)
-    const now = Math.floor(Date.now() / 1000);
-    if (now - header.iat > 120) {
-      throw new Error('JWE token is too old (more than 2 minutes)');
-    }
-
-    // Wrap the JWE in the expected format with encData field
-    const wrappedPayload = {
+    // Wrap the JWE in an encData object to match Java implementation
+    const wrappedJwe = {
       encData: jwe
     };
 
-    console.log('\nFinal Wrapped Payload:');
-    console.log(JSON.stringify(wrappedPayload, null, 2));
+    console.log('\nFinal Encrypted Payload:');
+    console.log(JSON.stringify(wrappedJwe));
     console.log('=== Encryption Process End ===\n');
     
-    return wrappedPayload;
+    return JSON.stringify(wrappedJwe);
   } catch (error) {
     console.error('\nEncryption failed:', error);
     throw error;
@@ -323,8 +304,8 @@ app.post('/api/visa/transaction', async (req, res) => {
     if (method === 'POST') {
       console.log('\nEncrypting payload...');
       const encryptedPayload = await encryptPayload(payload, settings.mleServerKey, settings.keyId);
-      console.log('\nEncrypted Payload :', encryptedPayload);
-      console.log(JSON.stringify(encryptedPayload, null, 2));
+      console.log('\nEncrypted Payload:');
+      console.log(encryptedPayload);
       requestData = encryptedPayload;
     }
 
@@ -343,34 +324,28 @@ app.post('/api/visa/transaction', async (req, res) => {
     try {
       // Make request to Visa API
       console.log('\nSending request to Visa API...');
-      console.log('Request Headers:', {
+      const requestHeaders = {
         'Accept': 'application/json',
         'Content-Type': 'application/json',
         'Authorization': `Basic ${credentials}`,
         'User-Agent': 'Visa API Client',
         'Host': new URL(apiUrl).host,
         'keyId': settings.keyId
-      });
+      };
+      console.log('Request Headers:', requestHeaders);
       console.log('Request Data:', requestData);
 
       const response = await axios({
         method: method.toLowerCase(),
         url: apiUrl,
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-          'Authorization': `Basic ${credentials}`,
-          'User-Agent': 'Visa API Client',
-          'Host': new URL(apiUrl).host,
-          'keyId': settings.keyId
-        },
+        headers: requestHeaders,
         data: requestData,
         httpsAgent
       });
 
       console.log('\nVisa API response received:');
       console.log('Status:', response.status);
-      console.log('Headers:', response.headers);
+      console.log('Response Headers:', response.headers);
       console.log('Response Data:', response.data);
       console.log('=== Visa API Request End ===\n');
 
@@ -379,7 +354,7 @@ app.post('/api/visa/transaction', async (req, res) => {
       if (typeof response.data === 'string' && response.data.includes('eyJ')) {
         console.log('\nDetected encrypted response, attempting decryption...');
         decryptedResponse = await decryptResponse(response.data, settings.mleClientKey);
-        console.log('Response decrypted successfully');
+        console.log('Decrypted Response:', decryptedResponse);
       }
 
       res.json({
