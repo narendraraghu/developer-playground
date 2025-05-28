@@ -28,9 +28,6 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Serve static files from the React app
-app.use(express.static(path.join(__dirname, 'build')));
-
 // Constants
 const CERT_DIR = path.join(__dirname, 'certificates');
 const SETTINGS_FILE = path.join(__dirname, 'settings.json');
@@ -60,8 +57,8 @@ function validateKeyFormat(key, type) {
       validEnd = ['-----END PRIVATE KEY-----', '-----END RSA PRIVATE KEY-----', '-----END EC PRIVATE KEY-----'];
       break;
     case 'mleServerKey':
-      validStart = ['-----BEGIN PUBLIC KEY-----', '-----BEGIN RSA PUBLIC KEY-----'];
-      validEnd = ['-----END PUBLIC KEY-----', '-----END RSA PUBLIC KEY-----'];
+      validStart = ['-----BEGIN PUBLIC KEY-----', '-----BEGIN RSA PUBLIC KEY-----', '-----BEGIN CERTIFICATE-----'];
+      validEnd = ['-----END PUBLIC KEY-----', '-----END RSA PUBLIC KEY-----', '-----END CERTIFICATE-----'];
       break;
     case 'mleClientKey':
       validStart = ['-----BEGIN PRIVATE KEY-----', '-----BEGIN RSA PRIVATE KEY-----', '-----BEGIN EC PRIVATE KEY-----'];
@@ -85,55 +82,51 @@ function validateKeyFormat(key, type) {
   return true;
 }
 
-// Helper function to save settings
-function saveSettings(settings) {
-  // Validate required fields
-  const requiredFields = [
-    'sslServerCert', 'sslClientKey',
-    'userId', 'password', 'keyId'
-  ];
-
-  for (const field of requiredFields) {
-    if (!settings[field]) {
-      throw new Error(`Missing required field: ${field}`);
-    }
-  }
-
-  // Validate certificate and key formats
-  validateKeyFormat(settings.sslServerCert, 'sslServerCert');
-  validateKeyFormat(settings.sslClientKey, 'sslClientKey');
-
-  // Validate MLE keys if provided and jose is available
-  if (jose) {
-    if (settings.mleServerKey) {
-      validateKeyFormat(settings.mleServerKey, 'mleServerKey');
-    }
-    if (settings.mleClientKey) {
-      validateKeyFormat(settings.mleClientKey, 'mleClientKey');
-    }
-  }
-
-  // Save settings to file
-  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
-  return true;
-}
-
-// Helper function to load settings
+// Load settings from file
 function loadSettings() {
-  if (!fs.existsSync(SETTINGS_FILE)) {
-    return null;
+  try {
+    if (fs.existsSync(SETTINGS_FILE)) {
+      const data = fs.readFileSync(SETTINGS_FILE, 'utf8');
+      return JSON.parse(data);
+    }
+  } catch (error) {
+    console.error('Error loading settings:', error);
   }
-  return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+  return null;
 }
 
-// Helper function to create base64 credentials
+// Save settings to file
+function saveSettings(settings) {
+  try {
+    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+  } catch (error) {
+    console.error('Error saving settings:', error);
+    throw new Error('Failed to save settings');
+  }
+}
+
+// Create base64 credentials
 function createBase64Credentials(userId, password) {
-  console.log('Creating base64 credentials...');
-  console.log('User ID:', userId);
-  console.log('Password length:', password ? password.length : 0);
-  const credentials = Buffer.from(`${userId}:${password}`).toString('base64');
-  console.log('Base64 credentials length:', credentials.length);
-  return credentials;
+  return Buffer.from(`${userId}:${password}`).toString('base64');
+}
+
+// Configure HTTPS agent with proxy if enabled
+function createHttpsAgent(settings) {
+  const agentConfig = {
+    cert: settings.sslServerCert,
+    key: settings.sslClientKey,
+    rejectUnauthorized: true
+  };
+
+  if (settings.useProxy && settings.proxyHost && settings.proxyPort) {
+    agentConfig.proxy = {
+      host: settings.proxyHost,
+      port: settings.proxyPort,
+      protocol: 'https:'
+    };
+  }
+
+  return new https.Agent(agentConfig);
 }
 
 // Helper function to encrypt payload using MLE
@@ -156,109 +149,94 @@ async function encryptPayload(payload, mleServerKey, keyId) {
   console.log('\n=== Encryption Process Start ===');
   console.log('Input Payload:', payload);
   console.log('Input Payload Type:', typeof payload);
-  console.log('Input Payload Length:', JSON.stringify(payload).length);
   console.log('Using Key ID:', keyId);
-  console.log('MLE Server Key length:', mleServerKey.length);
   
   try {
-    const publicKey = createPublicKey({
-      key: mleServerKey,
-      format: 'pem'
-    });
+    // Handle certificate format
+    let publicKey;
+    if (mleServerKey.includes('-----BEGIN CERTIFICATE-----')) {
+      console.log('Converting certificate to public key...');
+      const cert = createPublicKey({
+        key: mleServerKey,
+        format: 'pem'
+      });
+      publicKey = cert;
+    } else {
+      publicKey = createPublicKey({
+        key: mleServerKey,
+        format: 'pem'
+      });
+    }
 
     console.log('\nPublic key created successfully');
     
-    // Ensure payload is a string if it's an object
+    // Ensure payload is a string
     const payloadToEncrypt = typeof payload === 'object' ? JSON.stringify(payload) : payload;
     console.log('\nPayload after stringification:');
     console.log('Type:', typeof payloadToEncrypt);
     console.log('Content:', payloadToEncrypt);
-    console.log('Length:', payloadToEncrypt.length);
     
     // Create JWE with explicit kid matching keyId and iat timestamp
     console.log('\nCreating JWE token...');
-    const jwe = await new jose.EncryptJWT(payloadToEncrypt)
+    const jwe = await new jose.CompactEncrypt(
+      new TextEncoder().encode(payloadToEncrypt)
+    )
       .setProtectedHeader({ 
         alg: 'RSA-OAEP-256',  // Key encryption algorithm
-        enc: 'A256GCM',       // Content encryption algorithm
+        enc: 'A128GCM',       // Content encryption algorithm (changed to match Java)
         kid: keyId,           // Key ID
-        iat: Math.floor(Date.now() / 1000)  // Issued at timestamp
+        iat: Date.now()       // Issued at timestamp in milliseconds
       })
       .encrypt(publicKey);
 
-    // Verify the JWE header
-    const [headerB64] = jwe.split('.');
-    const header = JSON.parse(Buffer.from(headerB64, 'base64').toString());
-    console.log('\nJWE Header:', header);
-    console.log('JWE Token:', jwe);
-    
-    // Verify required header fields
-    const requiredFields = {
-      alg: 'RSA-OAEP-256',
-      enc: 'A256GCM',
-      kid: keyId
-    };
-
-    for (const [field, value] of Object.entries(requiredFields)) {
-      if (header[field] !== value) {
-        throw new Error(`Invalid JWE header: ${field} should be ${value} but got ${header[field]}`);
-      }
-    }
-
-    if (!header.iat) {
-      throw new Error('Missing iat (issued at) timestamp in JWE header');
-    }
-
-    // Verify iat is not too old (2 minutes)
-    const now = Math.floor(Date.now() / 1000);
-    if (now - header.iat > 120) {
-      throw new Error('JWE token is too old (more than 2 minutes)');
-    }
-
-    // Wrap the JWE in the expected format with encData field
-    const wrappedPayload = {
+    // Wrap the JWE in an encData object to match Java implementation
+    const wrappedJwe = {
       encData: jwe
     };
 
-    console.log('\nFinal Wrapped Payload:');
-    console.log(JSON.stringify(wrappedPayload, null, 2));
+    console.log('\nFinal Encrypted Payload:');
+    console.log(JSON.stringify(wrappedJwe));
     console.log('=== Encryption Process End ===\n');
     
-    return wrappedPayload;
+    return JSON.stringify(wrappedJwe);
   } catch (error) {
     console.error('\nEncryption failed:', error);
     throw error;
   }
 }
 
-// Helper function to decrypt response using MLE
-async function decryptResponse(encryptedResponse, mleClientKey) {
-  if (!jose || !mleClientKey) {
-    console.log('MLE not configured, returning response without decryption');
-    return encryptedResponse;
-  }
-
-  console.log('Decrypting response...');
-  
+// Add decryption function
+async function decryptResponse(encryptedData) {
   try {
-    // Extract the JWE from the encData field
-    const jwe = encryptedResponse.encData || encryptedResponse;
-    
-    const privateKey = createPrivateKey({
-      key: mleClientKey,
-      format: 'pem'
-    });
+    if (!jose || !encryptedData || !encryptedData.encData) {
+      return encryptedData;
+    }
 
-    const { payload } = await jose.jwtDecrypt(jwe, privateKey);
-    console.log('Response decrypted successfully');
-    return payload;
+    const settings = loadSettings();
+    if (!settings || !settings.mleClientKey) {
+      return encryptedData;
+    }
+
+    // Parse and decrypt the JWE token
+    const jwe = await jose.JWE.createDecrypt(settings.mleClientKey)
+      .decrypt(encryptedData.encData);
+
+    // Get the decrypted text
+    const decryptedText = new TextDecoder().decode(jwe.plaintext);
+    
+    // Try to parse as JSON
+    try {
+      return JSON.parse(decryptedText);
+    } catch (parseError) {
+      return decryptedText;
+    }
   } catch (error) {
-    console.error('Decryption failed:', error);
-    throw error;
+    console.error('Decryption failed:', error.message);
+    return encryptedData;
   }
 }
 
-// Endpoint to load settings
+// API Routes
 app.get('/api/visa/load-settings', (req, res) => {
   try {
     const settings = loadSettings();
@@ -273,7 +251,6 @@ app.get('/api/visa/load-settings', (req, res) => {
   }
 });
 
-// Endpoint to save settings
 app.post('/api/visa/save-settings', (req, res) => {
   try {
     const settings = req.body;
@@ -288,7 +265,6 @@ app.post('/api/visa/save-settings', (req, res) => {
   }
 });
 
-// Endpoint to make Visa API request
 app.post('/api/visa/transaction', async (req, res) => {
   try {
     const settings = loadSettings();
@@ -297,6 +273,7 @@ app.post('/api/visa/transaction', async (req, res) => {
     }
 
     const { payload, apiUrl, method = 'GET' } = req.body;
+    
     if (!apiUrl) {
       return res.status(400).json({ error: 'API URL is required' });
     }
@@ -305,122 +282,175 @@ app.post('/api/visa/transaction', async (req, res) => {
       return res.status(400).json({ error: 'Payload is required for POST requests' });
     }
 
-    console.log('\n=== Visa API Request Start ===');
-    console.log('Method:', method);
-    console.log('API URL:', apiUrl);
-    console.log('Key ID:', settings.keyId);
-    console.log('User ID:', settings.userId);
-    console.log('Password length:', settings.password ? settings.password.length : 0);
-
     // Create base64 credentials
     const credentials = createBase64Credentials(settings.userId, settings.password);
 
-    // Encrypt payload using MLE if it's a POST request
-    console.log('\nOriginal Payload:');
-    console.log(JSON.stringify(payload, null, 2));
-    
-    let requestData;
+    // Encrypt payload if it's a POST request
+    let requestData = payload;
     if (method === 'POST') {
-      console.log('\nEncrypting payload...');
-      const encryptedPayload = await encryptPayload(payload, settings.mleServerKey, settings.keyId);
-      console.log('\nEncrypted Payload :', encryptedPayload);
-      console.log(JSON.stringify(encryptedPayload, null, 2));
-      requestData = encryptedPayload;
+      try {
+        const encryptedPayload = await encryptPayload(payload, settings.mleServerKey, settings.keyId);
+        requestData = encryptedPayload;
+      } catch (encryptError) {
+        return res.status(500).json({ 
+          error: 'Failed to encrypt payload',
+          details: encryptError.message
+        });
+      }
     }
 
-    // Configure HTTPS agent for SSL mutual authentication
-    console.log('\nMLE Configuration:');
-    console.log('MLE Server Key present:', !!settings.mleServerKey);
-    console.log('MLE Client Key present:', !!settings.mleClientKey);
-    console.log('jose module available:', !!jose);
+    // Configure HTTPS agent with proxy if enabled
+    const httpsAgent = createHttpsAgent(settings);
 
-    const httpsAgent = new https.Agent({
-      cert: settings.sslServerCert,
-      key: settings.sslClientKey,
-      rejectUnauthorized: true
-    });
+    // Prepare request headers
+    const requestHeaders = {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+      'Authorization': `Basic ${credentials}`,
+      'User-Agent': 'Visa API Client',
+      'Host': new URL(apiUrl).host,
+      'keyId': settings.keyId
+    };
 
     try {
       // Make request to Visa API
-      console.log('\nSending request to Visa API...');
-      console.log('Request Headers:', {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-        'Authorization': `Basic ${credentials}`,
-        'User-Agent': 'Visa API Client',
-        'Host': new URL(apiUrl).host,
-        'keyId': settings.keyId
-      });
-      console.log('Request Data:', requestData);
-
       const response = await axios({
         method: method.toLowerCase(),
         url: apiUrl,
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-          'Authorization': `Basic ${credentials}`,
-          'User-Agent': 'Visa API Client',
-          'Host': new URL(apiUrl).host,
-          'keyId': settings.keyId
-        },
+        headers: requestHeaders,
         data: requestData,
         httpsAgent
       });
 
-      console.log('\nVisa API response received:');
-      console.log('Status:', response.status);
-      console.log('Headers:', response.headers);
-      console.log('Response Data:', response.data);
-      console.log('=== Visa API Request End ===\n');
+      // Handle response data
+      let responseData = response.data;
+      let decryptedData = null;
 
-      // Decrypt response if it's encrypted
-      let decryptedResponse = response.data;
-      if (typeof response.data === 'string' && response.data.includes('eyJ')) {
-        console.log('\nDetected encrypted response, attempting decryption...');
-        decryptedResponse = await decryptResponse(response.data, settings.mleClientKey);
-        console.log('Response decrypted successfully');
+      // Check if response is encrypted
+      if (typeof responseData === 'string') {
+        try {
+          const parsedResponse = JSON.parse(responseData);
+          if (parsedResponse.encData) {
+            decryptedData = await decryptResponse(parsedResponse);
+          }
+        } catch (parseError) {
+          console.log('Response is not JSON or does not contain encData field');
+        }
       }
 
+      // Send the response back to the client
       res.json({
-        response: decryptedResponse,
+        status: response.status,
+        data: response.data,
+        decryptedData: decryptedData,
+        isEncrypted: true,
         headers: response.headers
       });
+
     } catch (axiosError) {
-      console.error('\nVisa API request failed:');
-      console.error('Error details:', {
-        message: axiosError.message,
-        code: axiosError.code,
-        response: axiosError.response ? {
-          status: axiosError.response.status,
-          data: axiosError.response.data,
-          headers: axiosError.response.headers
-        } : 'No response'
-      });
-      
       if (axiosError.response) {
-        return res.status(axiosError.response.status).json({
+        const errorData = axiosError.response.data;
+        let decryptedData = null;
+
+        // Try to decrypt the error response
+        if (errorData && errorData.encData) {
+          decryptedData = await decryptResponse(errorData);
+        }
+
+        // Format the response
+        const formattedResponse = {
           error: 'Visa API request failed',
-          details: axiosError.response.data,
-          status: axiosError.response.status
-        });
+          details: errorData,
+          status: axiosError.response.status,
+          data: decryptedData || errorData,
+          decryptedData: decryptedData,
+          isEncrypted: !!errorData.encData,
+          headers: axiosError.response.headers
+        };
+
+        return res.status(axiosError.response.status).json(formattedResponse);
       } else if (axiosError.request) {
         return res.status(500).json({
           error: 'No response received from Visa API',
-          details: axiosError.message
+          details: axiosError.message,
+          status: 500,
+          data: null,
+          decryptedData: null,
+          isEncrypted: false,
+          headers: null
         });
       } else {
         return res.status(500).json({
           error: 'Error setting up Visa API request',
-          details: axiosError.message
+          details: axiosError.message,
+          status: 500,
+          data: null,
+          decryptedData: null,
+          isEncrypted: false,
+          headers: null
         });
       }
     }
   } catch (error) {
-    console.error('\nError in transaction endpoint:', error);
+    console.error('Error in transaction endpoint:', error);
     res.status(500).json({ 
       error: error.message,
       details: error.stack
+    });
+  }
+});
+
+// Add new endpoint for decrypting error response data
+app.post('/api/visa/decrypt', async (req, res) => {
+  try {
+    const { encryptedData } = req.body;
+    
+    if (!encryptedData) {
+      return res.status(400).json({ error: 'No encrypted data provided' });
+    }
+
+    const settings = loadSettings();
+    if (!settings || !settings.mleClientKey) {
+      return res.status(400).json({ error: 'MLE Client Key not available for decryption' });
+    }
+
+    console.log('\n=== Decrypting Error Response Data ===');
+    console.log('Encrypted Data:', encryptedData);
+
+    try {
+      // Create private key from PEM
+      const privateKey = await jose.importPKCS8(settings.mleClientKey, 'RSA-OAEP-256');
+      
+      // Decrypt the JWE
+      const decryptedResult = await jose.compactDecrypt(encryptedData, privateKey);
+      
+      // Get the decrypted text
+      const decryptedText = new TextDecoder().decode(decryptedResult.plaintext);
+      
+      // Try to parse as JSON
+      let decryptedJson;
+      try {
+        decryptedJson = JSON.parse(decryptedText);
+      } catch (parseError) {
+        decryptedJson = decryptedText;
+      }
+      
+      console.log('Decrypted Data:', decryptedJson);
+      console.log('=== Decryption Complete ===\n');
+      
+      res.json({ decryptedData: decryptedJson });
+    } catch (error) {
+      console.error('Decryption failed:', error);
+      res.status(500).json({ 
+        error: 'Failed to decrypt data',
+        details: error.message
+      });
+    }
+  } catch (error) {
+    console.error('Server error:', error);
+    res.status(500).json({ 
+      error: 'Server error',
+      details: error.message
     });
   }
 });
@@ -432,12 +462,6 @@ app.use((err, req, res, next) => {
     error: err.message || 'Internal server error',
     details: err.stack
   });
-});
-
-// The "catchall" handler: for any request that doesn't
-// match one above, send back React's index.html file.
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'build', 'index.html'));
 });
 
 const PORT = process.env.PORT || 3001;

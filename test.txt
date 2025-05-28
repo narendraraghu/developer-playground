@@ -1,0 +1,3 @@
+/Users/narendra/Desktop/vdp/vdp_playground/src/index.css
+
+pkill -f node && npm run dev
