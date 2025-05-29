@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
-import { FaCog, FaPaperPlane, FaCode, FaExchangeAlt, FaUpload, FaList, FaKey, FaLock, FaShieldAlt, FaNetworkWired } from 'react-icons/fa';
+import { FaCog, FaPaperPlane, FaCode, FaExchangeAlt, FaUpload, FaList, FaKey, FaLock, FaShieldAlt, FaNetworkWired, FaTrash } from 'react-icons/fa';
 import { motion } from 'framer-motion';
 
 // Add new component for error display
@@ -29,6 +29,37 @@ const ErrorDisplay = ({ error, response }) => {
 };
 
 function App() {
+  // Add getMethodStyle function before the state declarations
+  const getMethodStyle = (method) => {
+    switch (method.toUpperCase()) {
+      case 'GET':
+        return {
+          backgroundColor: '#E8F5E9',
+          color: '#2E7D32'
+        };
+      case 'POST':
+        return {
+          backgroundColor: '#FFF3E0',
+          color: '#E65100'
+        };
+      case 'PUT':
+        return {
+          backgroundColor: '#E3F2FD',
+          color: '#1565C0'
+        };
+      case 'DELETE':
+        return {
+          backgroundColor: '#FFEBEE',
+          color: '#C62828'
+        };
+      default:
+        return {
+          backgroundColor: '#E8F5E9',
+          color: '#2E7D32'
+        };
+    }
+  };
+
   const [settings, setSettings] = useState({
     // Credentials
     userId: '',
@@ -427,6 +458,19 @@ function App() {
     }
   };
 
+  // Add file input reference
+  const fileInputRef = React.useRef(null);
+
+  // Add function to handle collection removal
+  const handleRemoveCollection = () => {
+    setPostmanCollection(null);
+    setSelectedRequest(null);
+    // Reset the file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   return (
     <div className="App">
       <header className="App-header">
@@ -464,10 +508,12 @@ function App() {
               {/* Credentials Section */}
               <div className="settings-section">
                 <div className="section-header">
-                  <FaKey /> Credentials
+                  <FaKey /> Authentication
                 </div>
                 <div className="form-group">
-                  <label>User ID:</label>
+                  <label data-tooltip="UserID can be found in the Credentials sidebar under Two-Way SSL">
+                    User ID
+                  </label>
                   <input
                     type="text"
                     value={settings.userId}
@@ -476,7 +522,9 @@ function App() {
                   />
                 </div>
                 <div className="form-group">
-                  <label>Password:</label>
+                  <label data-tooltip="Password can be found in the Credentials sidebar under Two-Way SSL">
+                    Password
+                  </label>
                   <input
                     type="password"
                     value={settings.password}
@@ -492,7 +540,9 @@ function App() {
                   <FaLock /> SSL Certificates
                 </div>
                 <div className="form-group">
-                  <label>Visa SSL Server Certificate:</label>
+                  <label data-tooltip="Visa SSL Server Certificate can be found under Action by clicking on Download Certificate">
+                    Visa SSL Server Certificate
+                  </label>
                   <input
                     type="file"
                     accept=".pem,.cer,.crt"
@@ -503,7 +553,9 @@ function App() {
                   )}
                 </div>
                 <div className="form-group">
-                  <label>Client SSL Private Key:</label>
+                  <label data-tooltip="Client SSL Private Key is your project private key downloaded at the time of project creation">
+                    Client SSL Private Key
+                  </label>
                   <input
                     type="file"
                     accept=".pem,.key"
@@ -523,7 +575,9 @@ function App() {
                 {mleAvailable ? (
                   <>
                     <div className="form-group">
-                      <label>Key ID:</label>
+                      <label data-tooltip="Key ID can be copied from the MLE section in the Credentials tab">
+                        Key ID
+                      </label>
                       <input
                         type="text"
                         value={settings.keyId}
@@ -532,7 +586,9 @@ function App() {
                       />
                     </div>
                     <div className="form-group">
-                      <label>Visa MLE Public Key</label>
+                      <label data-tooltip="Upload your Server Encryption Certificate">
+                        Visa MLE Public Key
+                      </label>
                       <div className="file-input-container">
                         <input
                           type="file"
@@ -547,7 +603,9 @@ function App() {
                       )}
                     </div>
                     <div className="form-group">
-                      <label>Your MLE Private Key</label>
+                      <label data-tooltip="Your MLE Private Key is the private key generated at the time of MLE certificate creation">
+                        Your MLE Private Key
+                      </label>
                       <div className="file-input-container">
                         <input
                           type="file"
@@ -575,52 +633,96 @@ function App() {
                   <FaNetworkWired /> Proxy Settings
                 </div>
                 <div className="form-group">
-                  <label>
+                  <label className="checkbox-label">
                     <input
                       type="checkbox"
                       checked={settings.useProxy}
-                      onChange={(e) => setSettings(prev => ({ ...prev, useProxy: e.target.checked }))}
+                      onChange={(e) => {
+                        const useProxy = e.target.checked;
+                        setSettings(prev => ({
+                          ...prev,
+                          useProxy,
+                          // Clear proxy settings when disabled
+                          ...(useProxy ? {} : {
+                            proxyHost: '',
+                            proxyPort: '',
+                            proxyUsername: '',
+                            proxyPassword: ''
+                          })
+                        }));
+                      }}
                     />
                     Enable Proxy
                   </label>
                 </div>
                 {settings.useProxy && (
-                  <>
+                  <div className="proxy-settings">
                     <div className="form-group">
-                      <label>Proxy Host:</label>
+                      <label data-tooltip="Enter the proxy server hostname or IP address (e.g., proxy.example.com)">
+                        Proxy Host
+                      </label>
                       <input
                         type="text"
                         value={settings.proxyHost}
-                        onChange={(e) => setSettings(prev => ({ ...prev, proxyHost: e.target.value }))}
+                        onChange={(e) => setSettings(prev => ({ ...prev, proxyHost: e.target.value.trim() }))}
                         placeholder="e.g., proxy.example.com"
+                        required={settings.useProxy}
+                        pattern="^[a-zA-Z0-9][a-zA-Z0-9-_.]*[a-zA-Z0-9]$|^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$"
+                        title="Enter a valid hostname or IP address"
                       />
                     </div>
                     <div className="form-group">
-                      <label>Proxy Port:</label>
+                      <label data-tooltip="Enter the proxy server port number (1-65535)">
+                        Proxy Port
+                      </label>
                       <input
-                        type="text"
+                        type="number"
                         value={settings.proxyPort}
-                        onChange={(e) => setSettings(prev => ({ ...prev, proxyPort: e.target.value }))}
+                        onChange={(e) => {
+                          const port = e.target.value;
+                          if (port === '' || (port >= 1 && port <= 65535)) {
+                            setSettings(prev => ({ ...prev, proxyPort: port }));
+                          }
+                        }}
                         placeholder="e.g., 8080"
+                        min="1"
+                        max="65535"
+                        required={settings.useProxy}
                       />
                     </div>
                     <div className="form-group">
-                      <label>Proxy Username (Optional):</label>
+                      <label data-tooltip="Optional: Enter proxy authentication username if required">
+                        Proxy Username (Optional)
+                      </label>
                       <input
                         type="text"
                         value={settings.proxyUsername}
-                        onChange={(e) => setSettings(prev => ({ ...prev, proxyUsername: e.target.value }))}
+                        onChange={(e) => setSettings(prev => ({ ...prev, proxyUsername: e.target.value.trim() }))}
+                        placeholder="Enter username if required"
                       />
                     </div>
                     <div className="form-group">
-                      <label>Proxy Password (Optional):</label>
+                      <label data-tooltip="Optional: Enter proxy authentication password if required">
+                        Proxy Password (Optional)
+                      </label>
                       <input
                         type="password"
                         value={settings.proxyPassword}
                         onChange={(e) => setSettings(prev => ({ ...prev, proxyPassword: e.target.value }))}
+                        placeholder="Enter password if required"
                       />
                     </div>
-                  </>
+                    {settings.proxyUsername && !settings.proxyPassword && (
+                      <div className="warning-message">
+                        ⚠️ Proxy username is set but password is missing. Authentication may fail.
+                      </div>
+                    )}
+                    {settings.useProxy && (!settings.proxyHost || !settings.proxyPort) && (
+                      <div className="warning-message">
+                        ⚠️ Please provide both proxy host and port to enable proxy.
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -639,21 +741,30 @@ function App() {
           {showCollection && (
             <div className="collection-panel">
               <div className="collection-header">
-                <h3>Postman Collection</h3>
-                <div className="upload-container">
+                <h3>Collection</h3>
+                <div className="collection-actions">
                   <input
                     type="file"
                     accept=".json"
                     onChange={handlePostmanUpload}
-                    id="postman-upload"
                     style={{ display: 'none' }}
+                    ref={fileInputRef}
                   />
-                  <label htmlFor="postman-upload" className="upload-button">
+                  <button className="upload-button" onClick={() => fileInputRef.current?.click()}>
                     <FaUpload /> Upload Collection
-                  </label>
+                  </button>
+                  {postmanCollection && (
+                    <button 
+                      className="remove-collection-btn" 
+                      onClick={handleRemoveCollection}
+                      title="Remove Collection"
+                    >
+                      <FaTrash />
+                    </button>
+                  )}
                 </div>
               </div>
-              {postmanCollection && (
+              {postmanCollection ? (
                 <div className="request-list">
                   {postmanCollection.item.map((item, index) => (
                     <div
@@ -661,12 +772,17 @@ function App() {
                       className={`request-item ${selectedRequest === item ? 'selected' : ''}`}
                       onClick={() => handleRequestSelect(item)}
                     >
-                      <span className="method-badge" data-method={item.request.method}>
+                      <span className="method-badge" style={getMethodStyle(item.request.method)}>
                         {item.request.method}
                       </span>
                       <span className="request-name">{item.name}</span>
                     </div>
                   ))}
+                </div>
+              ) : (
+                <div className="upload-container">
+                  <FaUpload className="upload-icon" />
+                  <p>Upload a Postman collection to get started</p>
                 </div>
               )}
             </div>

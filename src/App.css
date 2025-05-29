@@ -181,15 +181,20 @@
 
 .payload-textarea {
   width: 100%;
-  min-height: 200px;
-  padding: 1rem;
-  border: 1px solid #dee2e6;
+  height: 300px;
+  padding: 12px;
+  border: 1px solid #ccc;
   border-radius: 4px;
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+  font-family: monospace;
   font-size: 14px;
-  line-height: 1.5;
   resize: vertical;
-  background: #f8f9fa;
+  background-color: #f8f9fa;
+  color: #333;
+  line-height: 1.5;
+  tab-size: 2;
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
 }
 
 .payload-textarea:focus {
@@ -304,8 +309,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding-bottom: 10px;
-  border-bottom: 1px solid #dee2e6;
+  margin-bottom: 1rem;
 }
 
 .collection-header h3 {
@@ -313,6 +317,35 @@
   color: #1A1F71;
   font-size: 1.1em;
   font-weight: 600;
+}
+
+.collection-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.remove-collection-btn {
+  background-color: #f44336;
+  color: white;
+  border: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s;
+  padding: 0;
+}
+
+.remove-collection-btn:hover {
+  background-color: #d32f2f;
+}
+
+.remove-collection-btn svg {
+  font-size: 1rem;
 }
 
 .upload-button {
@@ -519,21 +552,6 @@
   border: 1px solid #dee2e6;
   box-shadow: 0 2px 8px rgba(0,0,0,0.1);
   height: calc(100vh - 120px);
-}
-
-.collection-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding-bottom: 10px;
-  border-bottom: 1px solid #dee2e6;
-}
-
-.collection-header h3 {
-  margin: 0;
-  color: #1A1F71;
-  font-size: 1.1em;
-  font-weight: 600;
 }
 
 .request-list {
@@ -807,4 +825,129 @@
   overflow-x: auto;
   font-size: 0.9em;
   margin: 8px 0 0 0;
+}
+
+/* Update tooltip styles */
+label[data-tooltip] {
+  cursor: help;
+  position: relative;
+}
+
+label[data-tooltip]:hover::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 5px 10px;
+  background-color: rgba(0, 0, 0, 0.8);
+  color: white;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  z-index: 1000;
+  margin-bottom: 5px;
+}
+
+label[data-tooltip]:hover::before {
+  content: '';
+  position: absolute;
+  bottom: calc(100% - 5px);
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 5px;
+  border-style: solid;
+  border-color: rgba(0, 0, 0, 0.8) transparent transparent transparent;
+  z-index: 1000;
+}
+
+/* Remove Collection Button */
+.remove-collection-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  background: #dc3545;
+  border: none;
+  border-radius: 4px;
+  color: white;
+  cursor: pointer;
+  font-size: 0.9em;
+  transition: all 0.2s ease;
+  font-weight: 500;
+  width: 32px;
+  height: 32px;
+}
+
+.remove-collection-button:hover {
+  background: #c82333;
+  transform: translateY(-1px);
+}
+
+.remove-collection-button svg {
+  font-size: 1em;
+}
+
+/* Proxy Settings Styles */
+.proxy-settings {
+  background: #f8f9fa;
+  border-radius: 4px;
+  padding: 1rem;
+  margin-top: 0.5rem;
+}
+
+.proxy-settings .form-group {
+  margin-bottom: 1rem;
+}
+
+.proxy-settings .form-group:last-child {
+  margin-bottom: 0;
+}
+
+.proxy-settings input[type="text"],
+.proxy-settings input[type="number"],
+.proxy-settings input[type="password"] {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  transition: border-color 0.2s ease;
+}
+
+.proxy-settings input[type="text"]:focus,
+.proxy-settings input[type="number"]:focus,
+.proxy-settings input[type="password"]:focus {
+  border-color: #1A1F71;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(26, 31, 113, 0.1);
+}
+
+.proxy-settings input[type="text"]:invalid,
+.proxy-settings input[type="number"]:invalid {
+  border-color: #dc3545;
+}
+
+.warning-message {
+  color: #856404;
+  background-color: #fff3cd;
+  border: 1px solid #ffeeba;
+  border-radius: 4px;
+  padding: 0.75rem;
+  margin-top: 1rem;
+  font-size: 0.9rem;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
 } 

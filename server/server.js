@@ -389,27 +389,32 @@ app.post('/api/visa/transaction', async (req, res) => {
     const httpsAgent = new https.Agent({
       cert: settings.sslServerCert,
       key: settings.sslClientKey,
-      rejectUnauthorized: true
+      rejectUnauthorized: true,
+      secureProtocol: 'TLSv1_2_method'
     });
 
     // Configure proxy if enabled
     let proxyConfig = null;
     if (settings.useProxy && settings.proxyHost && settings.proxyPort) {
-      const proxyUrl = new URL('http://dummy');
-      proxyUrl.hostname = settings.proxyHost;
-      proxyUrl.port = settings.proxyPort;
-      
-      if (settings.proxyUsername && settings.proxyPassword) {
-        proxyUrl.username = settings.proxyUsername;
-        proxyUrl.password = settings.proxyPassword;
-      }
-      
       proxyConfig = {
         host: settings.proxyHost,
         port: settings.proxyPort,
+        protocol: 'http:', // Use HTTP for proxy connection
         auth: settings.proxyUsername && settings.proxyPassword ? 
           `${settings.proxyUsername}:${settings.proxyPassword}` : undefined
       };
+
+      // Add proxy error handling
+      httpsAgent.on('error', (error) => {
+        console.error('Proxy connection error:', error);
+        if (error.code === 'ECONNREFUSED') {
+          throw new Error(`Failed to connect to proxy server at ${settings.proxyHost}:${settings.proxyPort}. Please check if the proxy server is running and accessible.`);
+        } else if (error.code === 'ETIMEDOUT') {
+          throw new Error(`Proxy connection timed out. Please check your proxy server settings and network connection.`);
+        } else {
+          throw new Error(`Proxy error: ${error.message}`);
+        }
+      });
     }
 
     // Prepare request headers
@@ -439,7 +444,11 @@ app.post('/api/visa/transaction', async (req, res) => {
         headers: requestHeaders,
         data: requestData,
         httpsAgent,
-        proxy: proxyConfig
+        proxy: proxyConfig,
+        timeout: 30000, // 30 second timeout
+        validateStatus: function (status) {
+          return status >= 200 && status < 500; // Accept all responses between 200 and 499
+        }
       });
 
       console.log('\n=== Visa API Response Details ===');
